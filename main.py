@@ -12,6 +12,11 @@ sys.path.append(loma_path)
 from matplotlib.path import Path
 import compiler
 
+with open('./l2_loss.py') as f:
+    structs, lib = compiler.compile(f.read(),
+                                target = 'c',
+                                output_filename = '_code/l2_loss')
+
 class Polygon:
     def __init__(self) -> None:
         self.num_vertices = 0
@@ -98,17 +103,29 @@ class Picture:
                     arr[i][j][k] = np_array[i][j][k]
         return arr
     
+    def get_ctype_d_array(self):
+        type3 = ctypes.POINTER(ctypes.c_float)
+        type2 = ctypes.POINTER(type3)
+        arr = (type2 * self.height)()
+        for i in range(self.height):
+            arr[i] = (type3 * self.width)()
+            for j in range(self.width):
+                arr[i][j] = (ctypes.c_float * 3)()
+                for k in range(3):
+                    arr[i][j][k] = ctypes.c_float()
+        return arr
+    
     def get_loss_trad(self, pic2):
         # Get l2 loss of self and pic2
         np1 = np.array(self.image, dtype=np.float32)
         np2 = np.array(pic2.image, dtype=np.float32)
-        loss = np.sqrt(np.sum((np1 - np2) ** 2))
+        loss = np.sum((np1 - np2) ** 2) / (self.height * self.width * 3)
         return loss
     
     def get_dimage_trad(self, pic2):
         np1 = np.array(self.image, dtype=np.float32)
         np2 = np.array(pic2.image, dtype=np.float32)
-        self.dimage = (np1 - np2) / np.sqrt(np.sum((np1 - np2) ** 2))
+        self.dimage = 2 * (np1 - np2) / (self.height * self.width * 3)
         return self.dimage
         
     def get_loss_loma(self, pic2):
@@ -118,9 +135,21 @@ class Picture:
         loss = lib.l2_loss(arr1, arr2, self.height, self.width, 3)
         return loss
     
-    # TBD: 
     def get_dimage_loma(self, pic2):
-        pass
+        arr1 = self.get_ctype_array()
+        arr2 = pic2.get_ctype_array()
+        d_arr1 = self.get_ctype_d_array()
+        d_arr2 = self.get_ctype_d_array()
+        d_height = ctypes.POINTER(ctypes.c_int)()
+        d_width = ctypes.POINTER(ctypes.c_int)()
+        d_color = ctypes.POINTER(ctypes.c_int)()
+        d_loss = np.zeros((self.height, self.width, 3))
+        lib.d_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
+        for i in range(self.height):
+            for j in range(self.width):
+                for k in range(3):
+                    d_loss[i][j][k] = d_arr1[i][j][k]
+        return d_loss
     
     def raytrace(self, x, y):
         hit_list = []
@@ -148,11 +177,11 @@ class Picture:
             # TBD: Save the latest image
             
             # Only for my verify, it should be computed by loma
-            loss = self.get_loss_trad(pic2)
+            loss = self.get_loss_loma(pic2)
             print("Loss: ", loss)
             loss_record.append(loss)
             # Only for my verify, it should be computed by loma
-            dimage = self.get_dimage_trad(pic2)
+            dimage = self.get_dimage_loma(pic2)
             self.zero_grad()
             
             # Interier sampling
@@ -237,14 +266,10 @@ if __name__ == "__main__":
     target = Picture()
     target.init_with_file("./target.png")
 
-    image.optimization(target, num_iter=10, lr=10)
+    # image.optimization(target, num_iter=10, lr=10)
 
     image.show()
     target.show()
 
-    # with open('./l2_loss.py') as f:
-    #     structs, lib = compiler.compile(f.read(),
-    #                                 target = 'c',
-    #                                 output_filename = '_code/l2_loss')
-
-    print(image.get_loss_trad(target))
+    print(image.get_loss_trad(target) - image.get_loss_loma(target))
+    print(image.get_dimage_trad(target) - image.get_dimage_loma(target))

@@ -7,13 +7,13 @@ sys.path.append(current)
 from main import Picture
 
 test_target = Picture()
-test_target.generate(1, 4)
+test_target.generate(1, 3)
 test_target.save("./_image/test_target.png")
 
 test_img = Picture()
 test_img.polygons.append(test_target.polygons[0])
 
-for i in range(4):
+for i in range(3):
     test_img.polygons[0].vertices[i][0] += random.uniform(-8, 8)
     test_img.polygons[0].vertices[i][1] += random.uniform(-8, 8)
 
