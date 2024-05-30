@@ -24,6 +24,34 @@ with open('./l2_loss.py') as f:
     structs, lib = compiler.compile(f.read(),
                                 target = 'c',
                                 output_filename = '_code/l2_loss')
+    
+    
+class AdamOptimizer:
+    def __init__(self, params, lr=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
+        self.params = params
+        self.lr = lr
+        self.beta1 = beta1
+        self.beta2 = beta2
+        self.epsilon = epsilon
+        self.m = [np.zeros_like(p) for p in params]
+        self.v = [np.zeros_like(p) for p in params]
+        self.t = 0
+
+    def step(self, grads):
+        self.t += 1
+        updated_params = []
+        for i, param in enumerate(self.params):
+            self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * grads[i]
+            self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * (grads[i] ** 2)
+
+            m_hat = self.m[i] / (1 - self.beta1 ** self.t)
+            v_hat = self.v[i] / (1 - self.beta2 ** self.t)
+
+            update = self.lr * m_hat / (np.sqrt(v_hat) + self.epsilon)
+            param -= update
+            updated_params.append(param)
+        
+        return updated_params
 
 class Polygon:
     def __init__(self) -> None:
@@ -34,6 +62,8 @@ class Polygon:
         self.path = None
         self.dcolor = None
         self.dvertices = None
+        
+        self.adam_optimizer = None
         
     def zero_grad(self):
         self.dvertices = np.zeros_like(self.vertices)
@@ -56,13 +86,20 @@ class Polygon:
         self.color = np.random.uniform(0, 255, 3)
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
         
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
+        
     def check_hit(self, x, y):
         # No need to transform x and y
         return self.path.contains_point((x, y))
     
-    def update(self, lr=0.1):
-        self.vertices -= lr * self.dvertices
-        self.color -= lr * self.dcolor
+    def update(self):
+        if self.adam_optimizer is None:
+            raise ValueError("Optimizer not initialized. Call generate() first.")
+        
+        grads = [self.dvertices, self.dcolor]
+        updated_params = self.adam_optimizer.step(grads)
+        
+        self.vertices, self.color = updated_params
         self.path = Path(self.vertices)
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
 
@@ -232,10 +269,14 @@ class Picture:
         for p in self.polygons:
             p.update(lr)
     
-    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False):
+    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False, beta1=0.9, beta2=0.999, epsilon=1e-8):
         
         loss_record = []
         random_time_stamp = get_timestamp_string()
+        
+        # set Adam optimizer for each polygon
+        for p in self.polygons:
+            p.adam_optimizer = AdamOptimizer([p.vertices, p.color], lr=lr, beta1=beta1, beta2=beta2, epsilon=epsilon)
         
         for iter in range(num_iter):
             print("Iteration: ", iter)
@@ -313,10 +354,9 @@ class Picture:
                         dvertices[i + 1][1] += np.dot(dimage[int_y][int_x], dI_d1y)
                 
                 dvertices[0] += dvertices[-1]
-                # It should be deepcopy here
                 prim.dvertices = dvertices[:-1]
                 
-            self.update(lr=lr)
+            self.update()
             
         if save_output:
             # Draw the loss curve
