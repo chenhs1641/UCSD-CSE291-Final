@@ -21,7 +21,7 @@ for i in range(3):
     test_img.polygons[0].color[i] += random.uniform(-2, 2)
 
 test_img.polygons[0].render(test_img.image)
-test_img.optimization(test_target, num_iter=20, lr=1, save_video=True)
+test_img.optimization(test_target, num_iter=20, lr=1, save_output=True)
 test_img.save("./_image/test_img.png")
 
 from subprocess import call

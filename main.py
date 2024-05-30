@@ -11,6 +11,14 @@ loma_path = os.path.join(parent, "loma_public")
 sys.path.append(loma_path)
 from matplotlib.path import Path
 import compiler
+from datetime import datetime
+import matplotlib.pyplot as plt
+from subprocess import call
+
+def get_timestamp_string():
+    now = datetime.now()
+    timestamp_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+    return timestamp_str
 
 with open('./l2_loss.py') as f:
     structs, lib = compiler.compile(f.read(),
@@ -90,29 +98,65 @@ class Picture:
         for p in self.polygons:
             p.render(self.image)
     
+    # def get_ctype_array(self):
+    #     np_array = np.array(self.image, dtype=np.float32)
+    #     type3 = ctypes.POINTER(ctypes.c_float)
+    #     type2 = ctypes.POINTER(type3)
+    #     arr = (type2 * self.height)()
+    #     for i in range(self.height):
+    #         arr[i] = (type3 * self.width)()
+    #         for j in range(self.width):
+    #             arr[i][j] = (ctypes.c_float * 3)()
+    #             for k in range(3):
+    #                 arr[i][j][k] = np_array[i][j][k]
+    #     return arr
+    
     def get_ctype_array(self):
         np_array = np.array(self.image, dtype=np.float32)
-        type3 = ctypes.POINTER(ctypes.c_float)
-        type2 = ctypes.POINTER(type3)
-        arr = (type2 * self.height)()
+        
+        # 定义 ctypes 类型
+        Float3 = ctypes.c_float * 3
+        Float3Ptr = ctypes.POINTER(Float3)
+        
+        # 创建 ctypes 数组
+        arr = (Float3Ptr * self.height)()
+        
+        # 填充 ctypes 数组
         for i in range(self.height):
-            arr[i] = (type3 * self.width)()
+            row = (Float3 * self.width)()
             for j in range(self.width):
-                arr[i][j] = (ctypes.c_float * 3)()
-                for k in range(3):
-                    arr[i][j][k] = np_array[i][j][k]
+                row[j][:] = np_array[i, j, :]
+            arr[i] = row
+        
         return arr
     
+    # def get_ctype_d_array(self):
+    #     type3 = ctypes.POINTER(ctypes.c_float)
+    #     type2 = ctypes.POINTER(type3)
+    #     arr = (type2 * self.height)()
+    #     for i in range(self.height):
+    #         arr[i] = (type3 * self.width)()
+    #         for j in range(self.width):
+    #             arr[i][j] = (ctypes.c_float * 3)()
+    #             for k in range(3):
+    #                 arr[i][j][k] = ctypes.c_float()
+    #     return arr
+    
     def get_ctype_d_array(self):
-        type3 = ctypes.POINTER(ctypes.c_float)
-        type2 = ctypes.POINTER(type3)
-        arr = (type2 * self.height)()
+        # 定义 ctypes 类型
+        Float3 = ctypes.c_float * 3
+        Float3Ptr = ctypes.POINTER(Float3)
+        
+        # 创建 ctypes 数组
+        arr = (Float3Ptr * self.height)()
+        
+        # 填充 ctypes 数组
         for i in range(self.height):
-            arr[i] = (type3 * self.width)()
+            row = (Float3 * self.width)()
             for j in range(self.width):
-                arr[i][j] = (ctypes.c_float * 3)()
-                for k in range(3):
-                    arr[i][j][k] = ctypes.c_float()
+                row[j] = Float3()  # 初始化为零的 float3 数组
+            arr[i] = row
+        
         return arr
     
     def get_loss_trad(self, pic2):
@@ -135,20 +179,41 @@ class Picture:
         loss = lib.l2_loss(arr1, arr2, self.height, self.width, 3)
         return loss
     
+    # def get_dimage_loma(self, pic2):
+    #     arr1 = self.get_ctype_array()
+    #     arr2 = pic2.get_ctype_array()
+    #     d_arr1 = self.get_ctype_d_array()
+    #     d_arr2 = self.get_ctype_d_array()
+    #     d_height = ctypes.POINTER(ctypes.c_int)()
+    #     d_width = ctypes.POINTER(ctypes.c_int)()
+    #     d_color = ctypes.POINTER(ctypes.c_int)()
+    #     d_loss = np.zeros((self.height, self.width, 3))
+    #     lib.d_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
+    #     for i in range(self.height):
+    #         for j in range(self.width):
+    #             for k in range(3):
+    #                 d_loss[i][j][k] = d_arr1[i][j][k]
+    #     return d_loss
+    
     def get_dimage_loma(self, pic2):
         arr1 = self.get_ctype_array()
         arr2 = pic2.get_ctype_array()
         d_arr1 = self.get_ctype_d_array()
         d_arr2 = self.get_ctype_d_array()
-        d_height = ctypes.POINTER(ctypes.c_int)()
-        d_width = ctypes.POINTER(ctypes.c_int)()
-        d_color = ctypes.POINTER(ctypes.c_int)()
-        d_loss = np.zeros((self.height, self.width, 3))
+        d_height = ctypes.pointer(ctypes.c_int())
+        d_width = ctypes.pointer(ctypes.c_int())
+        d_color = ctypes.pointer(ctypes.c_int())
+        d_loss = np.zeros((self.height, self.width, 3), dtype=np.float32)
+
+        # 调用外部函数
         lib.d_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
-        for i in range(self.height):
-            for j in range(self.width):
-                for k in range(3):
-                    d_loss[i][j][k] = d_arr1[i][j][k]
+
+        # 将 d_arr1 转换为 numpy 数组
+        d_arr1_np = np.ctypeslib.as_array(d_arr1, shape=(self.height, self.width, 3))
+
+        # 直接复制数据
+        np.copyto(d_loss, d_arr1_np)
+
         return d_loss
     
     def raytrace(self, x, y):
@@ -167,14 +232,16 @@ class Picture:
         for p in self.polygons:
             p.update(lr)
     
-    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_video = False):
+    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False):
         
         loss_record = []
+        random_time_stamp = get_timestamp_string()
         
         for iter in range(num_iter):
             print("Iteration: ", iter)
             self.render()
-            # TBD: Save the latest image
+            if save_output:
+                self.image.save(f"./image_{random_time_stamp}/iter_{iter}.png")
             
             # Only for my verify, it should be computed by loma
             loss = self.get_loss_loma(pic2)
@@ -250,15 +317,25 @@ class Picture:
                 prim.dvertices = dvertices[:-1]
                 
             self.update(lr=lr)
-
-            if save_video:
-                self.image.save(f"./_image/iter_{iter}.png")
             
-        # TBD: Draw the loss curve and save it
-        
-        # TBD: Save the final output image
-        
-        # TBD: Use the images to generate a video
+        if save_output:
+            # Draw the loss curve
+            plt.clf()
+            plt.plot(range(num_iter), loss_record, linestyle='-')
+            plt.title('Loss over iterations')
+            plt.xlabel('Iterations')
+            plt.ylabel('Loss for Reorder')
+            #plt.grid(True)
+            plt.savefig(f"./image_{random_time_stamp}/loss_curve.png")
+            
+            # Save the final output image
+            self.render()
+            self.image.save(f"./image_{random_time_stamp}/output.png")
+            
+            # Generate video
+            call(["ffmpeg", "-framerate", "10", "-i",
+                "./image_"+random_time_stamp+"/iter_%d.png", "-vb", "20M",
+                "./image_"+random_time_stamp+"/output.mp4"])
         
 if __name__ == "__main__":
     image = Picture()
