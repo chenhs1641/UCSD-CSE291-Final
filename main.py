@@ -66,16 +66,19 @@ class Picture:
         self.image = Image.open(filename)
         self.width, self.height = self.image.size
 
-    def generate(self, count=2) -> None:
+    def generate(self, count=2, num_vertices=3) -> None:
         self.polygons = []
         for _ in range(count):
             tri = Polygon()
-            tri.generate(height=self.height, width=self.width)
+            tri.generate(num_vertices=num_vertices, height=self.height, width=self.width)
             self.polygons.append(tri)
             tri.render(self.image)
 
     def show(self) -> None:
         self.image.show()
+
+    def save(self, filename):
+        self.image.save(filename)
         
     def render(self):
         self.image = Image.new('RGB', (self.width, self.height), tuple(self.bg_color.astype(np.uint8)))
@@ -135,7 +138,7 @@ class Picture:
         for p in self.polygons:
             p.update(lr)
     
-    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05):
+    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_video = False):
         
         loss_record = []
         
@@ -218,6 +221,9 @@ class Picture:
                 prim.dvertices = dvertices[:-1]
                 
             self.update(lr=lr)
+
+            if save_video:
+                self.image.save(f"./_image/iter_{iter}.png")
             
         # TBD: Draw the loss curve and save it
         
@@ -225,20 +231,20 @@ class Picture:
         
         # TBD: Use the images to generate a video
         
+if __name__ == "__main__":
+    image = Picture()
+    image.generate(30)
+    target = Picture()
+    target.init_with_file("./target.png")
 
-image = Picture()
-image.generate(30)
-target = Picture()
-target.init_with_file("./target.png")
+    image.optimization(target, num_iter=10, lr=10)
 
-image.optimization(target, num_iter=10, lr=10)
+    image.show()
+    target.show()
 
-image.show()
-target.show()
+    # with open('./l2_loss.py') as f:
+    #     structs, lib = compiler.compile(f.read(),
+    #                                 target = 'c',
+    #                                 output_filename = '_code/l2_loss')
 
-# with open('./l2_loss.py') as f:
-#     structs, lib = compiler.compile(f.read(),
-#                                 target = 'c',
-#                                 output_filename = '_code/l2_loss')
-
-print(image.get_loss_trad(target))
+    print(image.get_loss_trad(target))
