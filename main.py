@@ -364,7 +364,7 @@ class Picture:
             plt.plot(range(num_iter), loss_record, linestyle='-')
             plt.title('Loss over iterations')
             plt.xlabel('Iterations')
-            plt.ylabel('Loss for Reorder')
+            plt.ylabel('Loss')
             #plt.grid(True)
             plt.savefig(f"./image_{random_time_stamp}/loss_curve.png")
             
