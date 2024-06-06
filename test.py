@@ -7,20 +7,19 @@ sys.path.append(current)
 from main import Picture
 
 test_target = Picture()
-test_target.generate(1, 3)
+test_target.generate(10, 3)
 test_target.save("./_image/test_target.png")
 
 test_img = Picture()
-test_img.polygons.append(test_target.polygons[0])
+test_img.polygons = test_target.polygons
 
-for i in range(3):
-    test_img.polygons[0].vertices[i][0] += random.uniform(-8, 8)
-    test_img.polygons[0].vertices[i][1] += random.uniform(-8, 8)
+for polygon in test_img.polygons:
+    for i in range(3):
+        polygon.vertices[i][0] += random.uniform(-8, 8)
+        polygon.vertices[i][1] += random.uniform(-8, 8)
+    for i in range(3):
+        polygon.color[i] += random.uniform(-8, 8)
 
-for i in range(3):
-    test_img.polygons[0].color[i] += random.uniform(-2, 2)
-
-test_img.polygons[0].render(test_img.image)
 test_img.optimization(test_target, num_iter=20, lr=1, save_output=True)
 test_img.save("./_image/test_img.png")
 
