@@ -17,33 +17,26 @@ random_time_stamp = get_timestamp_string()
 os.mkdir(f"./_image_{random_time_stamp}")
 
 test_target = Picture()
-test_target.generate(1, 3)
-test_target.generate(1, 4)
-test_target.generate(1, 5)
+test_target.generate(10, 3)
+# test_target.generate(1, 4)
+# test_target.generate(1, 5)
 test_target.save(f"./_image_{random_time_stamp}/test_target.png")
 
 test_img = Picture()
-test_img.polygons.append(test_target.polygons[0])
-test_img.polygons.append(test_target.polygons[1])
-test_img.polygons.append(test_target.polygons[2])
+test_img.polygons = test_target.polygons
 
-for i in range(3):
-    test_img.polygons[0].vertices[i][0] += random.uniform(-20, 20)
-    test_img.polygons[0].vertices[i][1] += random.uniform(-20, 20)
-
-for i in range(4):
-    test_img.polygons[1].vertices[i][0] += random.uniform(-20, 20)
-    test_img.polygons[1].vertices[i][1] += random.uniform(-20, 20)
-
-for i in range(5):
-    test_img.polygons[2].vertices[i][0] += random.uniform(-20, 20)
-    test_img.polygons[2].vertices[i][1] += random.uniform(-20, 20)
-
-for i in range(3):
-    test_img.polygons[0].color[i] += random.uniform(-20, 20)
-    test_img.polygons[1].color[i] += random.uniform(-20, 20)
-    test_img.polygons[2].color[i] += random.uniform(-20, 20)
+for polygon in test_img.polygons:
+    for i in range(3):
+        polygon.vertices[i][0] += random.uniform(-8, 8)
+        polygon.vertices[i][1] += random.uniform(-8, 8)
+    for i in range(3):
+        polygon.color[i] += random.uniform(-8, 8)
 
 test_img.polygons[0].render(test_img.image)
 test_img.optimization(test_target, num_iter=100, lr=1, save_output=True, random_time_stamp=random_time_stamp)
 test_img.save(f"./_image_{random_time_stamp}/test_img.png")
+
+from subprocess import call
+call(["ffmpeg", "-framerate", "10", "-i",
+    "./_image/iter_%d.png", "-vb", "20M",
+    "./_image/out.mp4"])

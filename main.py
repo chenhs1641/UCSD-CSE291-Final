@@ -14,6 +14,11 @@ import compiler
 import matplotlib.pyplot as plt
 from subprocess import call
 
+def get_timestamp_string():
+    now = datetime.now()
+    timestamp_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+    return timestamp_str
+
 with open('./l2_loss.py') as f:
     structs, lib = compiler.compile(f.read(),
                                 target = 'c',
@@ -56,12 +61,16 @@ class Polygon:
         self.path = None
         self.dcolor = None
         self.dvertices = None
+        # The smaller, the deeper
+        self.order = 0.0
+        self.dorder = 0.0
         
         self.adam_optimizer = None
         
     def zero_grad(self):
         self.dvertices = np.zeros_like(self.vertices)
         self.dcolor = np.zeros_like(self.color)
+        self.dorder = 0.0
 
     def render(self, image) -> None:
         draw = ImageDraw.Draw(image)
@@ -78,9 +87,11 @@ class Polygon:
         # Matplotlib path uses different coordinate system!
         self.path = Path(self.vertices)
         self.color = np.random.uniform(0, 255, 3)
+        self.order = 0.0
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
         
-        # self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
+        self.order_optimizer = AdamOptimizer([self.order])
         
     def check_hit(self, x, y):
         # No need to transform x and y
@@ -92,8 +103,11 @@ class Polygon:
         
         grads = [self.dvertices, self.dcolor]
         updated_params = self.adam_optimizer.step(grads)
-        
         self.vertices, self.color = updated_params
+        
+        grads = [self.dorder]
+        self.order = self.order_optimizer.step(grads)[0]
+        
         self.path = Path(self.vertices)
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
 
@@ -113,10 +127,10 @@ class Picture:
     def generate(self, count=2, num_vertices=3) -> None:
         # self.polygons = []
         for _ in range(count):
-            tri = Polygon()
-            tri.generate(num_vertices=num_vertices, height=self.height, width=self.width)
-            self.polygons.append(tri)
-            tri.render(self.image)
+            shape = Polygon()
+            shape.generate(num_vertices=num_vertices, height=self.height, width=self.width)
+            self.polygons.append(shape)
+            shape.render(self.image)
 
     def show(self) -> None:
         self.image.show()
@@ -126,6 +140,10 @@ class Picture:
         
     def render(self):
         self.image = Image.new('RGB', (self.width, self.height), tuple(self.bg_color.astype(np.uint8)))
+        # Sort polygons by order from the bottom to the top
+        self.polygons.sort(key=lambda x: x.order)
+        
+        # The order is from the bottom to the top
         for p in self.polygons:
             p.render(self.image)
     
@@ -229,33 +247,14 @@ class Picture:
                     d_loss[i][j][k] = d_arr1[i][j][k]
         return d_loss
     
-    # def get_dimage_loma(self, pic2):
-    #     arr1 = self.get_ctype_array()
-    #     arr2 = pic2.get_ctype_array()
-    #     d_arr1 = self.get_ctype_d_array()
-    #     d_arr2 = self.get_ctype_d_array()
-    #     d_height = ctypes.pointer(ctypes.c_int())
-    #     d_width = ctypes.pointer(ctypes.c_int())
-    #     d_color = ctypes.pointer(ctypes.c_int())
-    #     d_loss = np.zeros((self.height, self.width, 3), dtype=np.float32)
-
-    #     # 调用外部函数
-    #     lib.d_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
-
-    #     # 将 d_arr1 转换为 numpy 数组
-    #     d_arr1_np = np.ctypeslib.as_array(d_arr1, shape=(self.height, self.width, 3))
-
-    #     # 直接复制数据
-    #     np.copyto(d_loss, d_arr1_np)
-
-    #     return d_loss
-    
     def raytrace(self, x, y):
         hit_list = []
         # Check from the top
         for polygon in reversed(self.polygons):
             if polygon.check_hit(x, y):
                 hit_list.append(polygon)
+                if not ret_all:
+                    break
         return hit_list
 
     def zero_grad(self):
@@ -266,17 +265,19 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False, random_time_stamp="", beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False, beta1=0.9, beta2=0.999, epsilon=1e-8):
         
         loss_record = []
         
         # set Adam optimizer for each polygon
         for p in self.polygons:
             p.adam_optimizer = AdamOptimizer([p.vertices, p.color], lr=lr, beta1=beta1, beta2=beta2, epsilon=epsilon)
+            p.order_optimizer = AdamOptimizer([p.order], lr=order_lr, beta1=beta1, beta2=beta2, epsilon=epsilon)
         
         for iter in range(num_iter):
             print("Iteration: ", iter)
             self.render()
+            # already sorted by order
             if save_output:
                 self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
             
@@ -352,7 +353,30 @@ class Picture:
                 dvertices[0] += dvertices[-1]
                 prim.dvertices = dvertices[:-1]
                 
+            # Order sampling
+            for j in range(self.height):
+                for i in range(self.width):
+                    
+                    for _ in range(order_samples_per_pixel):
+                        dx = random.random()
+                        dy = random.random()
+                        hit_list = self.raytrace(i + dx, j + dy, ret_all=True)
+
+                        if len(hit_list) <= 1:
+                            continue
+                        dp_p = np.random.normal(loc=0, scale=1, size=len(hit_list))
+                        samples = dp_p + np.array([p.order for p in hit_list])
+                        top = hit_list[np.argmax(samples)]
+                        pixel_color = top.color
+                        
+                        pixel_loss = np.sum((pixel_color - dimage[j, i]) ** 2)
+                        
+                        top.dorder += -pixel_loss * dp_p[np.argmax(samples)] / order_samples_per_pixel
+                
             self.update()
+            
+            
+            
             
         if save_output:
             # Draw the loss curve
@@ -360,7 +384,7 @@ class Picture:
             plt.plot(range(num_iter), loss_record, linestyle='-')
             plt.title('Loss over iterations')
             plt.xlabel('Iterations')
-            plt.ylabel('Loss for Reorder')
+            plt.ylabel('Loss')
             #plt.grid(True)
             plt.savefig(f"./_image_{random_time_stamp}/loss_curve.png")
             
