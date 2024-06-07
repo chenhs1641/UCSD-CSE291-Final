@@ -35,8 +35,3 @@ for polygon in test_img.polygons:
 test_img.polygons[0].render(test_img.image)
 test_img.optimization(test_target, num_iter=100, lr=1, save_output=True, random_time_stamp=random_time_stamp)
 test_img.save(f"./_image_{random_time_stamp}/test_img.png")
-
-from subprocess import call
-call(["ffmpeg", "-framerate", "10", "-i",
-    "./_image/iter_%d.png", "-vb", "20M",
-    "./_image/out.mp4"])

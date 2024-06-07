@@ -158,50 +158,14 @@ class Picture:
                 for k in range(3):
                     arr[i][j][k] = np_array[i][j][k]
         return arr
-    
-    # def get_ctype_array(self):
-    #     np_array = np.array(self.image, dtype=np.float32)
-        
-    #     # 定义 ctypes 类型
-    #     Float3 = ctypes.c_float * 3
-    #     Float3Ptr = ctypes.POINTER(Float3)
-        
-    #     # 创建 ctypes 数组
-    #     arr = (Float3Ptr * self.height)()
-        
-    #     # 填充 ctypes 数组
-    #     for i in range(self.height):
-    #         row = (Float3 * self.width)()
-    #         for j in range(self.width):
-    #             row[j][:] = np_array[i, j, :]
-    #         arr[i] = row
-        
-    #     return arr
-    
+
     def get_ctype_d_array(self):
         type3 = ctypes.c_float * 3
         type2 = type3 * 200
         type1 = type2 * 201
         arr = type1()
         return arr
-    
-    # def get_ctype_d_array(self):
-    #     # 定义 ctypes 类型
-    #     Float3 = ctypes.c_float * 3
-    #     Float3Ptr = ctypes.POINTER(Float3)
-        
-    #     # 创建 ctypes 数组
-    #     arr = (Float3Ptr * self.height)()
-        
-    #     # 填充 ctypes 数组
-    #     for i in range(self.height):
-    #         row = (Float3 * self.width)()
-    #         for j in range(self.width):
-    #             row[j] = Float3()  # 初始化为零的 float3 数组
-    #         arr[i] = row
-        
-    #     return arr
-    
+
     def get_loss_trad(self, pic2):
         # Get l2 loss of self and pic2
         np1 = np.array(self.image, dtype=np.float32)
@@ -247,7 +211,7 @@ class Picture:
                     d_loss[i][j][k] = d_arr1[i][j][k]
         return d_loss
     
-    def raytrace(self, x, y):
+    def raytrace(self, x, y, ret_all=False):
         hit_list = []
         # Check from the top
         for polygon in reversed(self.polygons):
@@ -265,7 +229,7 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter = 100, interier_samples_per_pixel = 4, edge_samples_per_pixel = 1, lr = 0.1, edge_sampling_error = 0.05, save_output = False, beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
         
         loss_record = []
         
@@ -374,9 +338,6 @@ class Picture:
                         top.dorder += -pixel_loss * dp_p[np.argmax(samples)] / order_samples_per_pixel
                 
             self.update()
-            
-            
-            
             
         if save_output:
             # Draw the loss curve
