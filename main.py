@@ -131,13 +131,12 @@ class Picture:
     
     def get_ctype_array(self):
         np_array = np.array(self.image, dtype=np.float32)
-        type3 = ctypes.POINTER(ctypes.c_float)
-        type2 = ctypes.POINTER(type3)
-        arr = (type2 * self.height)()
+        type3 = ctypes.c_float * 3
+        type2 = type3 * 200
+        type1 = type2 * 201
+        arr = type1()
         for i in range(self.height):
-            arr[i] = (type3 * self.width)()
             for j in range(self.width):
-                arr[i][j] = (ctypes.c_float * 3)()
                 for k in range(3):
                     arr[i][j][k] = np_array[i][j][k]
         return arr
@@ -162,15 +161,10 @@ class Picture:
     #     return arr
     
     def get_ctype_d_array(self):
-        type3 = ctypes.POINTER(ctypes.c_float)
-        type2 = ctypes.POINTER(type3)
-        arr = (type2 * self.height)()
-        for i in range(self.height):
-            arr[i] = (type3 * self.width)()
-            for j in range(self.width):
-                arr[i][j] = (ctypes.c_float * 3)()
-                for k in range(3):
-                    arr[i][j][k] = ctypes.c_float()
+        type3 = ctypes.c_float * 3
+        type2 = type3 * 200
+        type1 = type2 * 201
+        arr = type1()
         return arr
     
     # def get_ctype_d_array(self):
@@ -210,6 +204,15 @@ class Picture:
         loss = lib.l2_loss(arr1, arr2, self.height, self.width, 3)
         return loss
     
+    def get_pyramid_loss_loma(self, pic2, pyramid_para):
+        arr1 = self.get_ctype_array()
+        arr2 = pic2.get_ctype_array()
+        arr_para = (ctypes.c_int * 10)()
+        for i in range(len(pyramid_para)):
+            arr_para[i] = pyramid_para[i]
+        loss = lib.pyramid_l2_loss(arr1, arr2, self.height, self.width, 3, arr_para, len(pyramid_para))
+        return loss
+
     def get_dimage_loma(self, pic2):
         arr1 = self.get_ctype_array()
         arr2 = pic2.get_ctype_array()
@@ -381,5 +384,7 @@ if __name__ == "__main__":
     image.show()
     target.show()
 
+    print(image.get_pyramid_loss_loma(target, [0, 1]))
+    # print(image.get_pyramid_loss_loma(target, [0, 1, 2]))
     print(image.get_loss_trad(target) - image.get_loss_loma(target))
     print(image.get_dimage_trad(target) - image.get_dimage_loma(target))
