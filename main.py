@@ -392,7 +392,12 @@ class Picture:
                         if max_ddf_dx > shear_strenth:
                             # Add an edge break record
                             position = second_derivative_estimates.index(max_ddf_dx) + 2
-                            vertex_record[prim] = 
+                            portion = (position + 1) / num_intervals
+                            real_pos = vertices[i] + portion * (vertices[i + 1] - vertices[i])
+                            if vertex_record.get(prim) is None:
+                                vertex_record[prim] = [(i+1, real_pos[0], real_pos[1])]
+                            else:
+                                vertex_record[prim].append((i+1, real_pos[0], real_pos[1]))
                             
                 
                 dvertices[0] += dvertices[-1]
