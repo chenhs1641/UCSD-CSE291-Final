@@ -13,16 +13,17 @@ from matplotlib.path import Path
 import compiler
 import matplotlib.pyplot as plt
 from subprocess import call
+import datetime
 
 def get_timestamp_string():
     now = datetime.now()
     timestamp_str = now.strftime("%Y-%m-%d_%H-%M-%S")
     return timestamp_str
 
-with open('./l2_loss.py') as f:
-    structs, lib = compiler.compile(f.read(),
-                                target = 'c',
-                                output_filename = '_code/l2_loss')
+# with open('./l2_loss.py') as f:
+#     structs, lib = compiler.compile(f.read(),
+#                                 target = 'c',
+#                                 output_filename = '_code/l2_loss')
     
     
 class AdamOptimizer:
@@ -55,7 +56,7 @@ class AdamOptimizer:
 class Polygon:
     def __init__(self) -> None:
         self.num_vertices = 0
-        self.vertices = []
+        self.vertices = None
         self.color = np.array([0.0, 0.0, 0.0])
         self.perimeter = 0.0
         self.path = None
@@ -110,6 +111,22 @@ class Polygon:
         
         self.path = Path(self.vertices)
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
+        
+    def add_vertex(self, index, x, y):
+        self.vertices = np.insert(self.vertices, index, [x, y], axis=0)
+        self.num_vertices += 1
+        self.path = Path(self.vertices)
+        self.dvertices = np.insert(self.dvertices, index, [0.0, 0.0], axis=0)
+        # Totally refresh Adam
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
+        
+    def remove_vertex(self, index):
+        self.vertices = np.delete(self.vertices, index, axis=0)
+        self.num_vertices -= 1
+        self.path = Path(self.vertices)
+        self.dvertices = np.delete(self.dvertices, index, axis=0)
+        # Totally refresh Adam
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
 
 class Picture:
     def __init__(self, height=170, width=169, bg_color=np.array([0.0, 0.0, 0.0])) -> None:
@@ -229,7 +246,10 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1,  random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
+        
+        # When shear strength <= 0, we don't use shear strength
+        # We have to use pyramid loss to compute the shear force
         
         loss_record = []
         
@@ -246,11 +266,13 @@ class Picture:
                 self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
             
             # Only for my verify, it should be computed by loma
-            loss = self.get_loss_loma(pic2)
+            #loss = self.get_loss_loma(pic2)
+            loss = self.get_loss_trad(pic2)
             print("Loss: ", loss)
             loss_record.append(loss)
             # Only for my verify, it should be computed by loma
-            dimage = self.get_dimage_loma(pic2)
+            #dimage = self.get_dimage_loma(pic2)
+            dimage = self.get_dimage_trad(pic2)
             self.zero_grad()
             
             # Interier sampling
@@ -267,6 +289,9 @@ class Picture:
                         
             total_perimeter = np.sum([p.perimeter for p in self.polygons])
             weight = 1.0 / total_perimeter / edge_samples_per_pixel
+            
+            if shear_strenth > 0:
+                vertex_record = {}
                         
             # Edge sampling
             # Do not sample randomly, but sample uniformly
@@ -275,6 +300,7 @@ class Picture:
                 dvertices = np.zeros_like(vertices)
                 in_color = prim.color
                 for i in range(prim.num_vertices):
+                    
                     length = np.linalg.norm(vertices[i + 1] - vertices[i])
                     dir = (vertices[i + 1] - vertices[i]) / length
                     vertical_dir = np.array([-dir[1], dir[0]])
@@ -288,6 +314,9 @@ class Picture:
                     num_samples = int(length * edge_samples_per_pixel + 0.5)
                     # n+1 intervals, n samples, the two endpoints aren't included
                     num_intervals = num_samples + 1
+                    
+                    if shear_strenth > 0:
+                        shear_force = []
                     
                     for j in range(num_samples):
                         portion = (j + 1) / num_intervals
@@ -313,6 +342,37 @@ class Picture:
                         dvertices[i][1] += np.dot(dimage[int_y][int_x], dI_d0y)
                         dvertices[i + 1][0] += np.dot(dimage[int_y][int_x], dI_d1x)
                         dvertices[i + 1][1] += np.dot(dimage[int_y][int_x], dI_d1y)
+                        
+                        if shear_strenth > 0:
+                            # dforce has a direction parallel to the vertical_dir
+                            # here we only care about its scale instead of its direction
+                            dforce = np.dot(dimage[int_y][int_x], (in_color - out_color) * weight)
+                            shear_force.append(dforce)
+                            
+                    if shear_strenth > 0:
+                        # We need to smooth the shear force at first
+                        
+                        # Analyze the shear force
+                        step_size = 1.0 / edge_samples_per_pixel
+                        shear_force_len = len(shear_force)
+                        if shear_force_len < 5: continue
+                        derivative_estimates = []
+                        for index in range(1, shear_force_len - 1):
+                            df_dx = (shear_force[index + 1] - 2 * shear_force[index] + shear_force[index - 1]) / (step_size ** 2)
+                            derivative_estimates.append(df_dx)
+                        # The first and last points are not included
+                        # Compute the second order derivative
+                        second_derivative_estimates = []
+                        for index in range(1, len(derivative_estimates) - 1):
+                            ddf_dx = (derivative_estimates[index + 1] - 2 * derivative_estimates[index] + derivative_estimates[index - 1]) / (step_size ** 2)
+                            second_derivative_estimates.append(ddf_dx)
+                        # The first two and last two points are not included
+                        max_ddf_dx = max(second_derivative_estimates)
+                        if max_ddf_dx > shear_strenth:
+                            # Add an edge break record
+                            position = second_derivative_estimates.index(max_ddf_dx) + 2
+                            vertex_record[prim] = 
+                            
                 
                 dvertices[0] += dvertices[-1]
                 prim.dvertices = dvertices[:-1]
