@@ -17,21 +17,22 @@ random_time_stamp = get_timestamp_string()
 os.mkdir(f"./_image_{random_time_stamp}")
 
 test_target = Picture()
-test_target.generate(10, 3)
+test_target.generate(5, 3)
 # test_target.generate(1, 4)
 # test_target.generate(1, 5)
 test_target.save(f"./_image_{random_time_stamp}/test_target.png")
 
 test_img = Picture()
 test_img.polygons = test_target.polygons
+test_img.polygons.reverse()
 
 for polygon in test_img.polygons:
     for i in range(3):
         polygon.vertices[i][0] += random.uniform(-8, 8)
         polygon.vertices[i][1] += random.uniform(-8, 8)
-    for i in range(3):
-        polygon.color[i] += random.uniform(-8, 8)
+    # for i in range(3):
+        # polygon.color[i] += random.uniform(-8, 8)
 
 test_img.polygons[0].render(test_img.image)
-test_img.optimization(test_target, num_iter=100, lr=1, save_output=True, random_time_stamp=random_time_stamp)
+test_img.optimization(test_target, num_iter=100, lr=0.1, save_output=True, random_time_stamp=random_time_stamp)
 test_img.save(f"./_image_{random_time_stamp}/test_img.png")

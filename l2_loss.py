@@ -1,11 +1,11 @@
-def l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], arr_2 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], height : In[int], width : In[int], color : In[int]) -> float:
+def l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 64)], 64)]], arr_2 : In[Array[(Array[(Array[(float, 3)], 64)], 64)]], height : In[int], width : In[int], color : In[int]) -> float:
     i : int = 0
     j : int = 0
     k : int = 0
     s : float = 0.0
-    while (i < height, max_iter := 200):
+    while (i < height, max_iter := 64):
         j = 0
-        while (j < width, max_iter := 200):
+        while (j < width, max_iter := 64):
             k = 0
             while (k < color, max_iter := 3):
                 s = s + pow(arr_1[i][j][k] - arr_2[i][j][k], 2.0)
@@ -14,7 +14,7 @@ def l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], arr_2 : I
         i = i + 1
     return s / (height * width * 3)
 
-def pyramid_l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], arr_2 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], height : In[int], width : In[int], color : In[int], pyramid_para: In[Array[(int, 10)]], pyramid_para_size: In[int]) -> float:
+def pyramid_l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 64)], 64)]], arr_2 : In[Array[(Array[(Array[(float, 3)], 64)], 64)]], height : In[int], width : In[int], color : In[int], pyramid_para: In[Array[(int, 5)]], pyramid_para_size: In[int]) -> float:
     i : int = 0
     j : int = 0
     k : int = 0
@@ -23,21 +23,21 @@ def pyramid_l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], a
     y : int = 0
     count : int = 0
     s : float = 0.0
-    arr_1_ : Array[(Array[(Array[(float, 3)], 200)], 201)]
-    while (t < pyramid_para_size, max_iter := 1):
+    arr_1_ : Array[(Array[(Array[(float, 3)], 64)], 64)]
+    while (t < pyramid_para_size, max_iter := 3):
         k = 0
         while (k < color, max_iter := 3):
             i = 0
-            while (i < height, max_iter := 201):
+            while (i < height, max_iter := 64):
                 j = 0
-                while (j < width, max_iter := 200):
+                while (j < width, max_iter := 64):
 
                     count = 0
                     arr_1_[i][j][k] = 0
                     x = i - pyramid_para[t]
-                    while (x <= i + pyramid_para[t], max_iter := 10):
+                    while (x <= i + pyramid_para[t], max_iter := 5):
                         y = j - pyramid_para[t]
-                        while (y <= j + pyramid_para[t], max_iter := 10):
+                        while (y <= j + pyramid_para[t], max_iter := 5):
                             if (x >= 0 and x < height) and (y >= 0 and y < width):
                                 arr_1_[i][j][k] = arr_1_[i][j][k] + arr_1[x][y][k]
                                 count = count + 1
@@ -52,4 +52,5 @@ def pyramid_l2_loss(arr_1 : In[Array[(Array[(Array[(float, 3)], 200)], 201)]], a
         t = t + 1
     return s
 
-d_l2_loss = rev_diff(l2_loss)
+_d_rev_l2_loss = rev_diff(l2_loss)
+_d_rev_pyramid_l2_loss = rev_diff(pyramid_l2_loss)
