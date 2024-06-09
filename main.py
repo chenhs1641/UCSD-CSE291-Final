@@ -78,7 +78,7 @@ class Polygon:
         fill_color = tuple(self.color.astype(np.uint8))
         draw.polygon(vertices, fill=fill_color)
 
-    def generate(self, num_vertices=3, height=170, width=169) -> None:
+    def generate(self, num_vertices=3, height=64, width=64) -> None:
         # Generate one triangle randomly
         self.num_vertices = num_vertices
         x_coords = np.random.uniform(0, height, self.num_vertices)
@@ -112,7 +112,7 @@ class Polygon:
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
 
 class Picture:
-    def __init__(self, height=170, width=169, bg_color=np.array([0.0, 0.0, 0.0])) -> None:
+    def __init__(self, height=64, width=64, bg_color=np.array([0.0, 0.0, 0.0])) -> None:
         self.height = height
         self.width = width
         self.bg_color = bg_color
@@ -150,8 +150,8 @@ class Picture:
     def get_ctype_array(self):
         np_array = np.array(self.image, dtype=np.float32)
         type3 = ctypes.c_float * 3
-        type2 = type3 * 200
-        type1 = type2 * 201
+        type2 = type3 * 64
+        type1 = type2 * 64
         arr = type1()
         for i in range(self.height):
             for j in range(self.width):
@@ -161,8 +161,8 @@ class Picture:
 
     def get_ctype_d_array(self):
         type3 = ctypes.c_float * 3
-        type2 = type3 * 200
-        type1 = type2 * 201
+        type2 = type3 * 64
+        type1 = type2 * 64
         arr = type1()
         return arr
 
@@ -189,7 +189,7 @@ class Picture:
     def get_pyramid_loss_loma(self, pic2, pyramid_para):
         arr1 = self.get_ctype_array()
         arr2 = pic2.get_ctype_array()
-        arr_para = (ctypes.c_int * 10)()
+        arr_para = (ctypes.c_int * 5)()
         for i in range(len(pyramid_para)):
             arr_para[i] = pyramid_para[i]
         loss = lib.pyramid_l2_loss(arr1, arr2, self.height, self.width, 3, arr_para, len(pyramid_para))
@@ -204,7 +204,28 @@ class Picture:
         d_width = ctypes.POINTER(ctypes.c_int)()
         d_color = ctypes.POINTER(ctypes.c_int)()
         d_loss = np.zeros((self.height, self.width, 3))
-        lib.d_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
+        lib._d_rev_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, 1.0)
+        for i in range(self.height):
+            for j in range(self.width):
+                for k in range(3):
+                    d_loss[i][j][k] = d_arr1[i][j][k]
+        return d_loss
+    
+    def get_dimage_pyramid_loss_loma(self, pic2, pyramid_para=[0]):
+        arr1 = self.get_ctype_array()
+        arr2 = pic2.get_ctype_array()
+        d_arr1 = self.get_ctype_d_array()
+        d_arr2 = self.get_ctype_d_array()
+        d_height = ctypes.POINTER(ctypes.c_int)()
+        d_width = ctypes.POINTER(ctypes.c_int)()
+        d_color = ctypes.POINTER(ctypes.c_int)()
+        arr_para = (ctypes.c_int * 5)()
+        d_arr_para = (ctypes.c_int * 5)()
+        for i in range(len(pyramid_para)):
+            arr_para[i] = pyramid_para[i]
+        d_piramid_para_size = ctypes.POINTER(ctypes.c_int)()
+        d_loss = np.zeros((self.height, self.width, 3))
+        lib._d_rev_pyramid_l2_loss(arr1, d_arr1, arr2, d_arr2, self.height, d_height, self.width, d_width, 3, d_color, arr_para, d_arr_para, len(pyramid_para), d_piramid_para_size, 1.0)
         for i in range(self.height):
             for j in range(self.width):
                 for k in range(3):
@@ -229,7 +250,7 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.001, edge_sampling_error=0.05, save_output = False, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
         
         loss_record = []
         
@@ -360,16 +381,18 @@ class Picture:
         
 if __name__ == "__main__":
     image = Picture()
-    image.generate(30)
+    image.generate(5)
     target = Picture()
-    target.init_with_file("./target.png")
+    target.generate(5)
+    # target.init_with_file("./target.png")
 
     # image.optimization(target, num_iter=10, lr=10)
 
     image.show()
     target.show()
 
-    print(image.get_pyramid_loss_loma(target, [0, 1]))
+    print(image.get_pyramid_loss_loma(target, [0, 1, 2]))
     # print(image.get_pyramid_loss_loma(target, [0, 1, 2]))
     print(image.get_loss_trad(target) - image.get_loss_loma(target))
-    print(image.get_dimage_trad(target) - image.get_dimage_loma(target))
+    print(image.get_dimage_trad(target) - image.get_dimage_pyramid_loss_loma(target))
+    print(image.get_dimage_trad(target) - image.get_dimage_pyramid_loss_loma(target, [0, 1, 2]))
