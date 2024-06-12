@@ -4,6 +4,7 @@ import ctypes
 import random
 
 from PIL import Image, ImageDraw
+import torchvision.transforms as transforms
 import numpy as np
 current = os.path.dirname(os.path.realpath(__file__))
 parent = os.path.dirname(current)
@@ -14,6 +15,9 @@ import compiler
 import matplotlib.pyplot as plt
 from subprocess import call
 import datetime
+import torch
+
+import torch.nn.functional as F
 
 def get_timestamp_string():
     now = datetime.now()
@@ -79,12 +83,27 @@ class Polygon:
         fill_color = tuple(self.color.astype(np.uint8))
         draw.polygon(vertices, fill=fill_color)
 
-    def generate(self, num_vertices=3, height=64, width=64) -> None:
-        # Generate one triangle randomly
+    def generate(self, num_vertices=3, height=64, width=64, threshold = 0.3) -> None:
         self.num_vertices = num_vertices
-        x_coords = np.random.uniform(0, height, self.num_vertices)
-        y_coords = np.random.uniform(0, width, self.num_vertices)
-        self.vertices = np.column_stack((x_coords, y_coords))
+        
+        while  True:
+            # Generate random points
+            points = np.column_stack((np.random.uniform(0, height, self.num_vertices),
+                                    np.random.uniform(0, width, self.num_vertices)))
+
+            # Find the centroid of the points
+            centroid = np.mean(points, axis=0)
+
+            # Sort the points based on the angle from the centroid
+            def angle_from_centroid(point):
+                return np.arctan2(point[1] - centroid[1], point[0] - centroid[0])
+            
+            self.vertices = points[np.argsort([angle_from_centroid(p) for p in points])]
+            area = self.polygon_area(self.vertices)
+            
+            if area > threshold * height * width:
+                break
+        
         # Matplotlib path uses different coordinate system!
         self.path = Path(self.vertices)
         self.color = np.random.uniform(0, 255, 3)
@@ -93,6 +112,12 @@ class Polygon:
         
         self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
         self.order_optimizer = AdamOptimizer([self.order])
+        
+    def polygon_area(self, vertices):
+        # Shoelace formula to calculate the area of a polygon
+        x = vertices[:, 0]
+        y = vertices[:, 1]
+        return 0.5 * np.abs(np.dot(x, np.roll(y, 1)) - np.dot(y, np.roll(x, 1)))
         
     def check_hit(self, x, y):
         # No need to transform x and y
@@ -116,17 +141,18 @@ class Polygon:
         self.vertices = np.insert(self.vertices, index, [x, y], axis=0)
         self.num_vertices += 1
         self.path = Path(self.vertices)
-        self.dvertices = np.insert(self.dvertices, index, [0.0, 0.0], axis=0)
+        # Use inf to get avoid of getting removed
+        self.dvertices = np.insert(self.dvertices, index, [np.inf, np.inf], axis=0)
         # Totally refresh Adam
-        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
-        
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color],lr=self.adam_optimizer.lr, beta1=self.adam_optimizer.beta1, beta2=self.adam_optimizer.beta2, epsilon=self.adam_optimizer.epsilon)
+    
     def remove_vertex(self, index):
         self.vertices = np.delete(self.vertices, index, axis=0)
         self.num_vertices -= 1
         self.path = Path(self.vertices)
         self.dvertices = np.delete(self.dvertices, index, axis=0)
         # Totally refresh Adam
-        self.adam_optimizer = AdamOptimizer([self.vertices, self.color])
+        self.adam_optimizer = AdamOptimizer([self.vertices, self.color],lr=self.adam_optimizer.lr, beta1=self.adam_optimizer.beta1, beta2=self.adam_optimizer.beta2, epsilon=self.adam_optimizer.epsilon)
 
 class Picture:
     def __init__(self, height=64, width=64, bg_color=np.array([0.0, 0.0, 0.0])) -> None:
@@ -267,7 +293,7 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1,  random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1, merge_area_thres = 3.0, merge_grad_thres = 0.5, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
         
         # When shear strength <= 0, we don't use shear strength
         # We have to use pyramid loss to compute the shear force
@@ -289,6 +315,7 @@ class Picture:
             # Only for my verify, it should be computed by loma
             #loss = self.get_loss_loma(pic2)
             loss = self.get_loss_trad(pic2)
+            
             print("Loss: ", loss)
             loss_record.append(loss)
             # Only for my verify, it should be computed by loma
@@ -318,6 +345,7 @@ class Picture:
             # Do not sample randomly, but sample uniformly
             for prim in self.polygons:
                 vertices = np.vstack([prim.vertices, prim.vertices[0]])
+                print(vertices)
                 dvertices = np.zeros_like(vertices)
                 in_color = prim.color
                 for i in range(prim.num_vertices):
@@ -371,7 +399,7 @@ class Picture:
                             shear_force.append(dforce)
                             
                     if shear_strenth > 0:
-                        # We need to smooth the shear force at first
+                        # We need to smooth the shear force at first?
                         
                         # Analyze the shear force
                         step_size = 1.0 / edge_samples_per_pixel
@@ -389,6 +417,7 @@ class Picture:
                             second_derivative_estimates.append(ddf_dx)
                         # The first two and last two points are not included
                         max_ddf_dx = max(second_derivative_estimates)
+                        print(max_ddf_dx)
                         if max_ddf_dx > shear_strenth:
                             # Add an edge break record
                             position = second_derivative_estimates.index(max_ddf_dx) + 2
@@ -398,7 +427,6 @@ class Picture:
                                 vertex_record[prim] = [(i+1, real_pos[0], real_pos[1])]
                             else:
                                 vertex_record[prim].append((i+1, real_pos[0], real_pos[1]))
-                            
                 
                 dvertices[0] += dvertices[-1]
                 prim.dvertices = dvertices[:-1]
@@ -424,6 +452,41 @@ class Picture:
                         top.dorder += -pixel_loss * dp_p[np.argmax(samples)] / order_samples_per_pixel
                 
             self.update()
+            
+            if shear_strenth > 0:
+                # Add edge break
+                for key, value in vertex_record.items():
+                    # In a reversed order based on v[0]
+                    sorted_value = sorted(value, key=lambda x: x[0], reverse=True)
+                    print(sorted_value)
+                    for v in sorted_value:
+                        key.add_vertex(v[0], v[1], v[2])
+                
+                # Apply edge merge
+                for prim in self.polygons:
+                    vertices = np.vstack([prim.vertices, prim.vertices[0], prim.vertices[1]])
+                    print(vertices)
+                    delete_list = []
+                    for i in range(1, len(prim.vertices) + 1):
+                        v0 = vertices[i - 1]
+                        v1 = vertices[i]
+                        v2 = vertices[i + 1]
+                        # Compute the area of the triangle
+                        area = 0.5 * np.abs(np.cross(v1 - v0, v2 - v0))
+                        index = i
+                        if index == len(prim.vertices):
+                            index = 0
+                        if area < merge_area_thres and np.linalg.norm(prim.dvertices[index]) < merge_grad_thres:
+                            print("Remove"+str(index))
+                            delete_list.append(index)
+                            
+                    delete_list.sort(reverse=True)
+                    print('finalremove')
+                    print(delete_list)
+                    for index in delete_list:
+                        prim.remove_vertex(index)
+                            
+                            
             
         if save_output:
             # Draw the loss curve
