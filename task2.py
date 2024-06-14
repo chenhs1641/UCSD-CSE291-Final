@@ -16,14 +16,10 @@ def get_timestamp_string():
 
 random_time_stamp = get_timestamp_string()
 os.mkdir(f"./_image_{random_time_stamp}")
-# os.mkdir(f"./_image_{random_time_stamp}/l2")
 os.mkdir(f"./_image_{random_time_stamp}/pyr")
 
 test_target = Picture()
 test_target.generate(5, 3)
-# test_target.generate(1, 4)
-# test_target.generate(1, 5)
-# test_target.save(f"./_image_{random_time_stamp}/l2/test_target.png")
 test_target.save(f"./_image_{random_time_stamp}/pyr/test_target.png")
 
 test_img = Picture()
@@ -34,12 +30,6 @@ for polygon in test_img.polygons:
     for i in range(3):
         polygon.vertices[i][0] += random.uniform(-12, 12)
         polygon.vertices[i][1] += random.uniform(-12, 12)
-    # for i in range(3):
-    #     polygon.color[i] += random.uniform(-8, 8)
 
-# test_img_2 = copy.deepcopy(test_img)
-# test_img.polygons[0].render(test_img.image)
-# test_img.optimization(test_target, num_iter=500, lr=0.05, save_output=True, random_time_stamp=random_time_stamp + "/l2", use_loss="l2")
-test_img.optimization(test_target, num_iter=500, lr=0.1, save_output=True, random_time_stamp=random_time_stamp + "/pyr")
-# test_img.save(f"./_image_{random_time_stamp}/l2/test_img.png")
+test_img.optimization(test_target, num_iter=500, lr=0.1, save_output=True, random_time_stamp=random_time_stamp + "/pyr", update_order=True)
 test_img.save(f"./_image_{random_time_stamp}/pyr/test_img.png")

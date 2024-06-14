@@ -83,7 +83,7 @@ class Polygon:
         fill_color = tuple(self.color.astype(np.uint8))
         draw.polygon(vertices, fill=fill_color)
 
-    def generate(self, num_vertices=3, height=64, width=64, threshold = 0.3) -> None:
+    def generate(self, num_vertices=3, height=64, width=64, threshold = 0.05) -> None:
         self.num_vertices = num_vertices
         
         while  True:
@@ -123,7 +123,7 @@ class Polygon:
         # No need to transform x and y
         return self.path.contains_point((x, y))
     
-    def update(self):
+    def update(self, update_order=False):
         if self.adam_optimizer is None:
             raise ValueError("Optimizer not initialized. Call generate() first.")
         
@@ -131,8 +131,9 @@ class Polygon:
         updated_params = self.adam_optimizer.step(grads)
         self.vertices, self.color = updated_params
         
-        grads = [self.dorder]
-        self.order = self.order_optimizer.step(grads)[0]
+        if update_order:
+            grads = [self.dorder]
+            self.order = self.order_optimizer.step(grads)[0]
         
         self.path = Path(self.vertices)
         self.perimeter = np.sum(np.linalg.norm(self.vertices - np.roll(self.vertices, 1, axis=0), axis=1))
@@ -289,11 +290,11 @@ class Picture:
         for p in self.polygons:
             p.zero_grad()
             
-    def update(self, lr=0.1):
+    def update(self, lr=0.1, update_order=False):
         for p in self.polygons:
-            p.update()
+            p.update(update_order)
     
-    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1, merge_area_thres = 5.0, merge_grad_thres = 0.5, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8, use_loss="pyramid_loss"):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1, merge_area_thres = 3.0, merge_grad_thres = 0.5, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8, use_loss="pyramid_loss", update_order=False):
         
         # When shear strength <= 0, we don't use shear strength
         # We have to use pyramid loss to compute the shear force
@@ -311,12 +312,9 @@ class Picture:
             print("Iteration: ", iter)
             self.render()
             # already sorted by order
-            # if save_output:
-            #     self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
+            if save_output:
+                self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
             
-            # Only for my verify, it should be computed by loma
-            #loss = self.get_loss_loma(pic2)
-            #loss = self.get_loss_trad(pic2)
             if use_loss == 'l2':
                 loss = self.get_loss_loma(pic2)
             else:
@@ -324,9 +322,7 @@ class Picture:
             
             print("Loss: ", loss)
             loss_record.append(loss)
-            # Only for my verify, it should be computed by loma
-            #dimage = self.get_dimage_loma(pic2)
-            #dimage = self.get_dimage_trad(pic2)
+
             if use_loss == 'l2':
                 dimage = self.get_dimage_loma(pic2)
             else:
@@ -355,7 +351,7 @@ class Picture:
             # Do not sample randomly, but sample uniformly
             for prim in self.polygons:
                 vertices = np.vstack([prim.vertices, prim.vertices[0]])
-                # print(vertices)
+                print(vertices)
                 dvertices = np.zeros_like(vertices)
                 in_color = prim.color
                 for i in range(prim.num_vertices):
@@ -461,21 +457,21 @@ class Picture:
                         
                         top.dorder += -pixel_loss * dp_p[np.argmax(samples)] / order_samples_per_pixel
                 
-            self.update()
+            self.update(update_order)
             
             if shear_strenth > 0:
                 # Add edge break
                 for key, value in vertex_record.items():
                     # In a reversed order based on v[0]
                     sorted_value = sorted(value, key=lambda x: x[0], reverse=True)
-                    # print(sorted_value)
+                    print(sorted_value)
                     for v in sorted_value:
                         key.add_vertex(v[0], v[1], v[2])
                 
                 # Apply edge merge
                 for prim in self.polygons:
                     vertices = np.vstack([prim.vertices, prim.vertices[0], prim.vertices[1]])
-                    # print(vertices)
+                    print(vertices)
                     delete_list = []
                     for i in range(1, len(prim.vertices) + 1):
                         v0 = vertices[i - 1]
@@ -487,12 +483,12 @@ class Picture:
                         if index == len(prim.vertices):
                             index = 0
                         if area < merge_area_thres and np.linalg.norm(prim.dvertices[index]) < merge_grad_thres:
-                            # print("Remove"+str(index))
+                            print("Remove"+str(index))
                             delete_list.append(index)
                             
                     delete_list.sort(reverse=True)
-                    # print('finalremove')
-                    # print(delete_list)
+                    print('finalremove')
+                    print(delete_list)
                     for index in delete_list:
                         prim.remove_vertex(index)
                     
@@ -533,15 +529,11 @@ if __name__ == "__main__":
     image.generate(5)
     target = Picture()
     target.generate(5)
-    # target.init_with_file("./target.png")
-
-    # image.optimization(target, num_iter=10, lr=10)
 
     image.show()
     target.show()
 
     print(image.get_pyramid_loss_loma(target, [0, 1, 2]))
-    # print(image.get_pyramid_loss_loma(target, [0, 1, 2]))
     print(image.get_loss_trad(target) - image.get_loss_loma(target))
     print(image.get_dimage_trad(target) - image.get_dimage_pyramid_loss_loma(target))
     print(image.get_dimage_trad(target) - image.get_dimage_pyramid_loss_loma(target, [0, 1, 2]))
