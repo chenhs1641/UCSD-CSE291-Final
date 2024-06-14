@@ -24,10 +24,10 @@ def get_timestamp_string():
     timestamp_str = now.strftime("%Y-%m-%d_%H-%M-%S")
     return timestamp_str
 
-# with open('./l2_loss.py') as f:
-#     structs, lib = compiler.compile(f.read(),
-#                                 target = 'c',
-#                                 output_filename = '_code/l2_loss')
+with open('./l2_loss.py') as f:
+    structs, lib = compiler.compile(f.read(),
+                                target = 'c',
+                                output_filename = '_code/l2_loss')
     
     
 class AdamOptimizer:
@@ -293,12 +293,14 @@ class Picture:
         for p in self.polygons:
             p.update()
     
-    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1, merge_area_thres = 3.0, merge_grad_thres = 0.5, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8):
+    def optimization(self, pic2, num_iter=100, interier_samples_per_pixel=4, edge_samples_per_pixel=1, order_samples_per_pixel=1, lr=0.1, order_lr=0.01, edge_sampling_error=0.05, save_output = False, shear_strenth = -1, merge_area_thres = 5.0, merge_grad_thres = 0.5, random_time_stamp = "", beta1=0.9, beta2=0.999, epsilon=1e-8, use_loss="pyramid_loss"):
         
         # When shear strength <= 0, we don't use shear strength
         # We have to use pyramid loss to compute the shear force
         
         loss_record = []
+        if shear_strenth > 0:
+            num_vtx = []
         
         # set Adam optimizer for each polygon
         for p in self.polygons:
@@ -309,18 +311,26 @@ class Picture:
             print("Iteration: ", iter)
             self.render()
             # already sorted by order
-            if save_output:
-                self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
+            # if save_output:
+            #     self.image.save(f"./_image_{random_time_stamp}/iter_{iter}.png")
             
             # Only for my verify, it should be computed by loma
             #loss = self.get_loss_loma(pic2)
-            loss = self.get_loss_trad(pic2)
+            #loss = self.get_loss_trad(pic2)
+            if use_loss == 'l2':
+                loss = self.get_loss_loma(pic2)
+            else:
+                loss = self.get_pyramid_loss_loma(pic2, [0, 1, 2])
             
             print("Loss: ", loss)
             loss_record.append(loss)
             # Only for my verify, it should be computed by loma
             #dimage = self.get_dimage_loma(pic2)
-            dimage = self.get_dimage_trad(pic2)
+            #dimage = self.get_dimage_trad(pic2)
+            if use_loss == 'l2':
+                dimage = self.get_dimage_loma(pic2)
+            else:
+                dimage = self.get_dimage_pyramid_loss_loma(pic2, [0, 1, 2])
             self.zero_grad()
             
             # Interier sampling
@@ -345,7 +355,7 @@ class Picture:
             # Do not sample randomly, but sample uniformly
             for prim in self.polygons:
                 vertices = np.vstack([prim.vertices, prim.vertices[0]])
-                print(vertices)
+                # print(vertices)
                 dvertices = np.zeros_like(vertices)
                 in_color = prim.color
                 for i in range(prim.num_vertices):
@@ -417,7 +427,7 @@ class Picture:
                             second_derivative_estimates.append(ddf_dx)
                         # The first two and last two points are not included
                         max_ddf_dx = max(second_derivative_estimates)
-                        print(max_ddf_dx)
+                        # print(max_ddf_dx)
                         if max_ddf_dx > shear_strenth:
                             # Add an edge break record
                             position = second_derivative_estimates.index(max_ddf_dx) + 2
@@ -458,14 +468,14 @@ class Picture:
                 for key, value in vertex_record.items():
                     # In a reversed order based on v[0]
                     sorted_value = sorted(value, key=lambda x: x[0], reverse=True)
-                    print(sorted_value)
+                    # print(sorted_value)
                     for v in sorted_value:
                         key.add_vertex(v[0], v[1], v[2])
                 
                 # Apply edge merge
                 for prim in self.polygons:
                     vertices = np.vstack([prim.vertices, prim.vertices[0], prim.vertices[1]])
-                    print(vertices)
+                    # print(vertices)
                     delete_list = []
                     for i in range(1, len(prim.vertices) + 1):
                         v0 = vertices[i - 1]
@@ -477,14 +487,16 @@ class Picture:
                         if index == len(prim.vertices):
                             index = 0
                         if area < merge_area_thres and np.linalg.norm(prim.dvertices[index]) < merge_grad_thres:
-                            print("Remove"+str(index))
+                            # print("Remove"+str(index))
                             delete_list.append(index)
                             
                     delete_list.sort(reverse=True)
-                    print('finalremove')
-                    print(delete_list)
+                    # print('finalremove')
+                    # print(delete_list)
                     for index in delete_list:
                         prim.remove_vertex(index)
+                    
+                num_vtx.append(len(vertices))
                             
                             
             
@@ -497,6 +509,15 @@ class Picture:
             plt.ylabel('Loss')
             #plt.grid(True)
             plt.savefig(f"./_image_{random_time_stamp}/loss_curve.png")
+
+            if shear_strenth > 0:
+                plt.clf()
+                plt.plot(range(num_iter), num_vtx, linestyle='-')
+                plt.title('Number of Vertices over iterations')
+                plt.xlabel('Iterations')
+                plt.ylabel('Number of Vertices')
+                #plt.grid(True)
+                plt.savefig(f"./_image_{random_time_stamp}/num_vtx_curve.png")
             
             # Save the final output image
             self.render()
