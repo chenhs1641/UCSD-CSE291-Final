@@ -492,7 +492,7 @@ class Picture:
                     for index in delete_list:
                         prim.remove_vertex(index)
                     
-                num_vtx.append(len(vertices))
+                num_vtx.append(len(vertices)-2)
                             
                             
             
